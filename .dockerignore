@@ -1,0 +1,37 @@
+# Virtualenvs — the image builds its own via uv
+.venv/
+venv/
+
+# Runtime data. Qdrant now lives in a server + named volume, and app.db is
+# bind-mounted at runtime, so none of this belongs in the image.
+data/
+
+# Frontend has its own build context / Dockerfile
+frontend/
+node_modules/
+
+# Python build artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# VCS and tooling
+.git/
+.gitignore
+.idea/
+.vscode/
+.ipynb_checkpoints/
+
+# Notebooks and scratch
+notebooks/
+*.ipynb
+Untitled.ipynb
+untitled.py
+
+# Docs and archives
+*.md
+!README.md
+docs/
+*.zip

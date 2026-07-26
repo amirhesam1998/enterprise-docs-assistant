@@ -179,3 +179,26 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# --- Project ---
+# data/ holds Qdrant file-mode storage, app.db, uploads and the raw corpus.
+# None of it belongs in the repo.
+data/
+.venv/
+__pycache__/
+*.pyc
+.env
+
+# Notebooks were only ever used for scratch work; no real notebook is kept.
+*.ipynb
+.ipynb_checkpoints/
+
+# Frontend build artefacts and dependencies.
+frontend/node_modules/
+frontend/dist/
+
+# JetBrains
+.idea/
+/graphify-out
+/docs
+/docs

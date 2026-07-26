@@ -1,0 +1,147 @@
+@import "tailwindcss";
+
+/* Class-based dark mode: we toggle `.dark` on <html> (see ThemeToggle). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+  Visual point of view: an "access dossier" — ink on warm paper by day, a
+  charcoal file room by night. One signal-amber accent for action. Clearance
+  levels each get a committed semantic hue because level is load-bearing here.
+*/
+:root {
+  --paper: #f4f1ea;
+  --panel: #fbfaf6;
+  --panel-2: #eeeae0;
+  --ink: #1b1a16;
+  --muted: #6f6a5d;
+  --faint: #928c7d;
+  --line: #ddd7c9;
+  --line-strong: #c8c1af;
+
+  --accent: #c2410c; /* burnt signal orange */
+  --accent-ink: #ffffff;
+
+  --creator: #b45309; /* gold clearance */
+  --creator-bg: #f6e9d0;
+  --admin: #1d5b73; /* slate teal */
+  --admin-bg: #d5e6ec;
+  --user: #5b5750; /* neutral */
+  --user-bg: #e6e1d5;
+
+  --ok: #3f6f4a;
+  --danger: #a02c2c;
+  --danger-bg: #f2dcda;
+}
+
+.dark {
+  --paper: #0d0d10;
+  --panel: #161619;
+  --panel-2: #1e1e22;
+  --ink: #e9e6df;
+  --muted: #9a958a;
+  --faint: #6f6a60;
+  --line: #2a2a30;
+  --line-strong: #3a3a42;
+
+  --accent: #f97316;
+  --accent-ink: #1a1205;
+
+  --creator: #e3a72f;
+  --creator-bg: #38290f;
+  --admin: #57b6d6;
+  --admin-bg: #102831;
+  --user: #a9a396;
+  --user-bg: #24231f;
+
+  --ok: #6bbf7f;
+  --danger: #e8837c;
+  --danger-bg: #33191a;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-creator: var(--creator);
+  --color-creator-bg: var(--creator-bg);
+  --color-admin: var(--admin);
+  --color-admin-bg: var(--admin-bg);
+  --color-user: var(--user);
+  --color-user-bg: var(--user-bg);
+  --color-ok: var(--ok);
+  --color-danger: var(--danger);
+  --color-danger-bg: var(--danger-bg);
+
+  --font-sans: "Inter Variable", "Vazirmatn Variable", ui-sans-serif, system-ui,
+    sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, "SF Mono", monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv11", "ss01";
+}
+
+/* Persian content: Vazirmatn already handles the glyphs via fallback, but bump
+   line-height a touch for legibility. */
+[dir="rtl"] {
+  line-height: 1.85;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--accent) 30%, transparent);
+}
+
+/* Thin, dossier-like scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--line-strong) transparent;
+}
+
+/* Respect reduced motion globally as a backstop; components also gate on it. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* A faint ruled-paper grid used behind key surfaces. */
+.dossier-grid {
+  background-image: linear-gradient(
+      to right,
+      color-mix(in oklab, var(--line) 45%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklab, var(--line) 45%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 28px 28px;
+}
+
+.stamp {
+  font-family: var(--font-mono);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}

@@ -1,0 +1,118 @@
+# Enterprise Docs Assistant — qdrant + redis + api + worker + frontend.
+#
+# Ollama is NOT a service here. It runs on the host (see README) and is reached
+# via host.docker.internal.
+
+services:
+  redis:
+    # Broker + result backend for the ingestion worker.
+    image: redis:7-alpine
+    container_name: eda-redis
+    restart: unless-stopped
+    ports:
+      # Exposed so a worker or a .delay() probe run on the host talks to the same
+      # broker the API enqueues to.
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  qdrant:
+    # Keep in step with qdrant-client in uv.lock (1.18.x) — the client refuses to
+    # vouch for a server more than one minor version away.
+    image: qdrant/qdrant:v1.18.0
+    container_name: eda-qdrant
+    restart: unless-stopped
+    ports:
+      # Exposed so host-run scripts (build_index.py, eval.py, ...) hit the same
+      # server the API uses. That is the whole point of leaving file mode.
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      # A fresh named volume. The old data/qdrant is file-mode storage and is
+      # NOT compatible with server mode — re-index instead of migrating.
+      - qdrant_storage:/qdrant/storage
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  api:
+    build: .
+    container_name: eda-api
+    restart: unless-stopped
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Compose service name resolves on the internal network.
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: docs
+      REDIS_URL: redis://redis:6379/0
+      # Ollama on the host, outside Docker.
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.1:8b-local}
+      # RBAC / auth — read from env, never baked into the image.
+      SECRET_KEY: ${SECRET_KEY:-dev-only-change-me}
+      TOKEN_MINUTES: ${TOKEN_MINUTES:-60}
+      DEFAULT_TENANT: ${DEFAULT_TENANT:-public}
+      CREATOR_USERNAME: ${CREATOR_USERNAME:-creator}
+      CREATOR_PASSWORD: ${CREATOR_PASSWORD:-creator123}
+      CREATOR_EMAIL: ${CREATOR_EMAIL:-creator@example.com}
+      FRONTEND_ORIGIN: ${FRONTEND_ORIGIN:-http://localhost:5173}
+      APP_DB_PATH: /app/data/app.db
+      HF_HOME: /opt/hf
+    volumes:
+      # The whole data dir, not just app.db: SQLite writes -wal/-journal files
+      # beside the database, so the directory has to be the shared mount.
+      - ./data:/app/data
+      # Reuse the host's Hugging Face cache so bge-m3 (~2GB) is not re-downloaded.
+      - ${HF_CACHE_DIR:-~/.cache/huggingface}:/opt/hf
+    ports:
+      - "8000:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  worker:
+    # Same image as the API — it needs eda.parse/eda.index and api.tasks — but a
+    # different command. This is where bge-m3 actually loads; the API never does.
+    build: .
+    container_name: eda-worker
+    restart: unless-stopped
+    depends_on:
+      qdrant:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: docs
+      REDIS_URL: redis://redis:6379/0
+      HF_HOME: /opt/hf
+    volumes:
+      # The same ./data mount as the API: the API writes the upload, the worker
+      # reads that exact path.
+      - ./data:/app/data
+      - ${HF_CACHE_DIR:-~/.cache/huggingface}:/opt/hf
+    command: ["celery", "-A", "api.celery_app.celery_app", "worker", "--loglevel=info", "--concurrency=1"]
+
+  frontend:
+    build: ./frontend
+    container_name: eda-frontend
+    restart: unless-stopped
+    depends_on:
+      - api
+    ports:
+      # nginx listens on 80 inside; 5173 keeps the documented URL and matches
+      # FRONTEND_ORIGIN above.
+      - "5173:80"
+
+volumes:
+  qdrant_storage:

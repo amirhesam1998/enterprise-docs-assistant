@@ -1,0 +1,11 @@
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+*.log
+tsconfig.tsbuildinfo
+.vscode/
+.idea/
+Dockerfile
+.dockerignore
