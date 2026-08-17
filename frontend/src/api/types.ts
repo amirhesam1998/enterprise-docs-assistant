@@ -68,6 +68,18 @@ export interface IngestResult {
   chunks: number;
   source: string;
   tenant_id: string;
+  // Canonical pipeline extras (absent on legacy results — treat as "indexed").
+  ingestion_status?: "indexed" | "indexed_with_warnings" | "needs_review" | "failed";
+  extraction_route?: string;
+  quality_score?: number;
+  quality_level?: string;
+  total_pages?: number;
+  accepted_pages?: number;
+  needs_review_pages?: number;
+  failed_pages?: number;
+  table_count?: number;
+  warnings?: string[];
+  embedded_chunks?: number;
 }
 
 /** Celery states, plus our own optimistic "queued" before the first poll lands. */

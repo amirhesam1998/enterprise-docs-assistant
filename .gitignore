@@ -197,8 +197,34 @@ __pycache__/
 frontend/node_modules/
 frontend/dist/
 
+# The generic Python-template `lib/` rule above must not hide frontend source.
+!/frontend/src/lib/
+!/frontend/src/lib/format.ts
+!/frontend/src/lib/motion.ts
+
+# Repository-local tool state and ad-hoc source snapshots.
+/.claude/
+/src.zip
+
+# Real-document OCR fixtures stay local; only sanitized fixtures are committed.
+/evaluation/ocr/local_private/
+
+# Benchmark corpus: real/private documents and generated reports stay local.
+# Only synthetic examples, READMEs, and labels are committed (see
+# docs/benchmark-corpus-plan.md). READMEs under reports/ are kept.
+/evaluation/corpus/local-private/
+/evaluation/corpus/raw-private/
+/evaluation/corpus/reports/*.json
+/evaluation/corpus/reports/*.csv
+/evaluation/corpus/reports/*.html
+
 # JetBrains
 .idea/
 /graphify-out
-/docs
-/docs
+
+# Generated documentation build output only. Hand-written docs (e.g.
+# docs/document-ingestion-architecture.md, docs/benchmark-corpus-plan.md) are
+# tracked; only rendered/site output is ignored.
+/docs/_build/
+/docs/dist/
+/docs/site/

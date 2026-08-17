@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "_comment": "SYNTHETIC EXAMPLE (Level 4). table_index is the zero-based order of the table on the page. sample_cells are a chosen subset (row/col zero-based) — full cell truth is only needed for a small hard subset. Values here are invented.",
+  "tables": [
+    {
+      "filename": "invoice_fa_scanned.pdf",
+      "page_number": 1,
+      "table_index": 0,
+      "expected_rows": 4,
+      "expected_cols": 3,
+      "headers": ["شرح", "تعداد", "مبلغ"],
+      "sample_cells": [
+        { "row": 1, "col": 0, "text": "خدمات پشتیبانی" },
+        { "row": 1, "col": 2, "text": "۵,۰۰۰,۰۰۰" },
+        { "row": 3, "col": 0, "text": "جمع کل" }
+      ]
+    },
+    {
+      "filename": "budget_report.xlsx",
+      "page_number": 1,
+      "table_index": 0,
+      "expected_rows": 3,
+      "expected_cols": 2,
+      "headers": ["Category", "Amount"],
+      "sample_cells": [
+        { "row": 1, "col": 0, "text": "Rent" },
+        { "row": 1, "col": 1, "text": "1200" },
+        { "row": 2, "col": 0, "text": "Food" }
+      ]
+    }
+  ]
+}

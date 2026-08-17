@@ -1,0 +1,50 @@
+{
+  "schema_version": "1.0",
+  "_comment": "SYNTHETIC EXAMPLE (Level 2 labels). human_verdict is the reviewer's call of accepted/needs_review/failed for the page; expected_page_type uses the eda.ingestion_schema.PageType vocabulary.",
+  "pages": [
+    {
+      "filename": "policy_en_digital.pdf",
+      "page_number": 1,
+      "expected_page_type": "digital",
+      "language": "en",
+      "should_extract_text": true,
+      "expected_has_table": false,
+      "expected_reading_order": "good",
+      "human_verdict": "accepted",
+      "notes": "Title page; single column."
+    },
+    {
+      "filename": "invoice_fa_scanned.pdf",
+      "page_number": 1,
+      "expected_page_type": "scanned",
+      "language": "fa",
+      "should_extract_text": true,
+      "expected_has_table": true,
+      "expected_reading_order": "good",
+      "human_verdict": "needs_review",
+      "notes": "Low-contrast scan; OCR readable but totals row is faint."
+    },
+    {
+      "filename": "spec_mixed_twocol.pdf",
+      "page_number": 3,
+      "expected_page_type": "mixed",
+      "language": "mixed",
+      "should_extract_text": true,
+      "expected_has_table": true,
+      "expected_reading_order": "bad",
+      "human_verdict": "needs_review",
+      "notes": "Two-column page; right column read before left in one paragraph."
+    },
+    {
+      "filename": "blank_separator.pdf",
+      "page_number": 4,
+      "expected_page_type": "empty",
+      "language": "en",
+      "should_extract_text": false,
+      "expected_has_table": false,
+      "expected_reading_order": "n/a",
+      "human_verdict": "failed",
+      "notes": "Intentional blank separator page; must not be a false-positive extraction."
+    }
+  ]
+}

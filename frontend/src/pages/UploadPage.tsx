@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { ApiError, api } from "../api/client";
-import type { JobStatus } from "../api/types";
+import type { IngestResult, JobStatus } from "../api/types";
 import { useAuth } from "../auth/AuthContext";
 import { useToast } from "../components/Toast";
 import { Button, Chip, Panel, SectionTitle, Spinner } from "../components/primitives";
@@ -147,10 +147,142 @@ interface QueueEntry {
   queuedAt: number;
 }
 
-function StatusChip({ status }: { status: string }) {
+function StatusChip({
+  status,
+  result,
+}: {
+  status: string;
+  result?: IngestResult | null;
+}) {
+  // A canonical job can complete (Celery SUCCESS) yet index nothing because the
+  // quality gate held or rejected it — say so rather than claiming "Indexed".
+  const st = result?.ingestion_status;
+  if (status === "SUCCESS" && (st === "needs_review" || st === "failed")) {
+    return (
+      <Chip tone={st === "failed" ? "danger" : "accent"}>
+        {st === "failed" ? "Not indexed" : "Needs review"}
+      </Chip>
+    );
+  }
   const tone =
     status === "SUCCESS" ? "ok" : status === "FAILURE" ? "danger" : "accent";
   return <Chip tone={tone}>{phaseOf(status).label}</Chip>;
+}
+
+/** Compact quality line shown on canonical results (absent on legacy shape). */
+function QualityLine({ result }: { result: IngestResult }) {
+  if (result.quality_score === undefined) return null;
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted">
+      <span className="stamp text-[10px] text-faint">quality</span>
+      <span className="font-mono tabular-nums">
+        {result.quality_score.toFixed(0)}/100
+      </span>
+      {result.quality_level && (
+        <span className="text-faint">
+          · {result.quality_level.replace(/_/g, " ")}
+        </span>
+      )}
+      {result.extraction_route && (
+        <span className="text-faint">· {result.extraction_route}</span>
+      )}
+      {typeof result.total_pages === "number" && (
+        <span className="text-faint">
+          · {result.accepted_pages ?? 0}/{result.total_pages} pages
+        </span>
+      )}
+    </div>
+  );
+}
+
+function WarningLine({ warnings }: { warnings: string[] }) {
+  if (warnings.length === 0) return null;
+  return (
+    <div className="mt-1.5 text-xs text-muted">
+      <span className="stamp text-[10px] text-faint">warnings</span>{" "}
+      {warnings.slice(0, 3).join(", ").replace(/_/g, " ")}
+      {warnings.length > 3 ? ` +${warnings.length - 3} more` : ""}
+    </div>
+  );
+}
+
+/** The receipt. Legacy results (no ingestion_status) read as "indexed"; canonical
+ *  results additionally surface quality, warnings, and the held/failed outcomes. */
+function IngestReceipt({ result }: { result: IngestResult }) {
+  const { me } = useAuth();
+  const status = result.ingestion_status ?? "indexed";
+  const warnings = result.warnings ?? [];
+
+  if (status === "needs_review" || status === "failed") {
+    const failed = status === "failed";
+    return (
+      <motion.div
+        variants={fadeUp}
+        initial="hidden"
+        animate="show"
+        className="mt-2 rounded-lg border border-line bg-panel-2/60 px-3 py-2.5"
+      >
+        <div className="stamp mb-1.5 flex items-center gap-1.5 text-[10px] text-muted">
+          <IconAlert width={12} height={12} />
+          {failed ? "Parsed — nothing indexed" : "Parsed — held for review"}
+        </div>
+        <div className="text-sm text-muted">
+          {failed
+            ? "No content passed the extraction quality gate, so nothing was written to the index."
+            : "The extraction was flagged for review by the quality gate and was not indexed."}
+        </div>
+        <QualityLine result={result} />
+        <WarningLine warnings={warnings} />
+      </motion.div>
+    );
+  }
+
+  return (
+    <motion.div
+      variants={fadeUp}
+      initial="hidden"
+      animate="show"
+      className="mt-2 rounded-lg border border-ok/30 bg-ok/10 px-3 py-2.5"
+    >
+      <div className="stamp mb-1.5 text-[10px] text-ok">
+        {status === "indexed_with_warnings" ? "Ingested with warnings" : "Ingested"}
+      </div>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
+        <span>
+          <span className="font-mono font-semibold tabular-nums">
+            {result.chunks}
+          </span>{" "}
+          <span className="text-muted">
+            chunk{result.chunks === 1 ? "" : "s"} indexed
+          </span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="stamp text-[10px] text-faint">tenant</span>
+          <Chip tone="accent">{result.tenant_id}</Chip>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="stamp text-[10px] text-faint">acl</span>
+          {me?.acl_groups.length ? (
+            me.acl_groups.map((g) => <Chip key={g}>{g}</Chip>)
+          ) : (
+            <span className="text-xs text-faint">none</span>
+          )}
+        </span>
+      </div>
+      <QualityLine result={result} />
+      <WarningLine warnings={warnings} />
+      <div className="mt-2 text-xs text-muted">
+        Retrievable now — but only by identities inside that tenant and those
+        groups.
+      </div>
+      <Link
+        to="/ask"
+        className="mt-2 inline-flex items-center gap-1.5 text-sm text-accent hover:underline"
+      >
+        Ask a question about it <IconArrow width={14} height={14} />
+      </Link>
+    </motion.div>
+  );
 }
 
 /** Indeterminate bar. There is no percentage to report — the worker exposes a
@@ -180,7 +312,6 @@ function JobRow({
   onRetry: (entry: QueueEntry) => Promise<void>;
   onDismiss: (key: string) => void;
 }) {
-  const { me } = useAuth();
   const job = useJobPoll(entry.jobId, onSettle);
   const done = TERMINAL.has(job.status);
   const elapsed = useElapsed(entry.queuedAt, !done);
@@ -219,7 +350,7 @@ function JobRow({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <span className="truncate text-sm font-medium">{entry.source}</span>
-            <StatusChip status={job.status} />
+            <StatusChip status={job.status} result={job.result} />
           </div>
 
           <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted">
@@ -242,46 +373,7 @@ function JobRow({
           {/* The receipt. Same detail discipline as a source card: say exactly
               what landed and under whose clearance, not just "done". */}
           {job.status === "SUCCESS" && job.result && (
-            <motion.div
-              variants={fadeUp}
-              initial="hidden"
-              animate="show"
-              className="mt-2 rounded-lg border border-ok/30 bg-ok/10 px-3 py-2.5"
-            >
-              <div className="stamp mb-1.5 text-[10px] text-ok">Ingested</div>
-              <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm">
-                <span>
-                  <span className="font-mono font-semibold tabular-nums">
-                    {job.result.chunks}
-                  </span>{" "}
-                  <span className="text-muted">
-                    chunk{job.result.chunks === 1 ? "" : "s"} indexed
-                  </span>
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="stamp text-[10px] text-faint">tenant</span>
-                  <Chip tone="accent">{job.result.tenant_id}</Chip>
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="stamp text-[10px] text-faint">acl</span>
-                  {me?.acl_groups.length ? (
-                    me.acl_groups.map((g) => <Chip key={g}>{g}</Chip>)
-                  ) : (
-                    <span className="text-xs text-faint">none</span>
-                  )}
-                </span>
-              </div>
-              <div className="mt-2 text-xs text-muted">
-                Retrievable now — but only by identities inside that tenant and
-                those groups.
-              </div>
-              <Link
-                to="/ask"
-                className="mt-2 inline-flex items-center gap-1.5 text-sm text-accent hover:underline"
-              >
-                Ask a question about it <IconArrow width={14} height={14} />
-              </Link>
-            </motion.div>
+            <IngestReceipt result={job.result} />
           )}
 
           {job.status === "FAILURE" && (
@@ -398,11 +490,26 @@ export default function UploadPage() {
   const onSettle = useCallback(
     (s: JobStatus) => {
       if (s.status === "SUCCESS" && s.result) {
-        toast.push({
-          tone: "success",
-          title: `${s.result.source} indexed`,
-          body: `${s.result.chunks} chunks are now retrievable inside tenant ${s.result.tenant_id}.`,
-        });
+        const st = s.result.ingestion_status ?? "indexed";
+        if (st === "failed") {
+          toast.push({
+            tone: "error",
+            title: `${s.result.source} not indexed`,
+            body: "No content passed the extraction quality gate.",
+          });
+        } else if (st === "needs_review") {
+          toast.push({
+            tone: "info",
+            title: `${s.result.source} held for review`,
+            body: "Parsed, but flagged by the quality gate — not indexed.",
+          });
+        } else {
+          toast.push({
+            tone: "success",
+            title: `${s.result.source} indexed`,
+            body: `${s.result.chunks} chunks are now retrievable inside tenant ${s.result.tenant_id}.`,
+          });
+        }
       } else if (s.status === "FAILURE") {
         toast.push({
           tone: "error",

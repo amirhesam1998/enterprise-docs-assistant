@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0",
+  "fixtures": [
+    {
+      "fixture_id": "sanitized-mixed-example",
+      "tier": "committed_sanitized",
+      "source_file": "committed_sanitized/fixtures/mixed-example.png",
+      "source_page_number": 1,
+      "expected_page_type": "mixed",
+      "expected_route": "combined",
+      "ground_truth_text": null,
+      "expected_language_profiles": ["fas+eng"],
+      "tags": ["mixed", "Persian", "English"],
+      "privacy_classification": "sanitized",
+      "notes": "Structure example only; no fixture or accuracy claim is included yet."
+    },
+    {
+      "fixture_id": "private-page-example",
+      "tier": "local_private",
+      "source_file": "local_private/source-document.pdf",
+      "source_page_number": 4,
+      "expected_page_type": "unknown",
+      "expected_route": null,
+      "ground_truth_text": null,
+      "expected_language_profiles": ["fas+eng"],
+      "tags": ["scanned", "Persian", "multi-column"],
+      "privacy_classification": "private",
+      "notes": "Unlabeled diagnostic example only; route and OCR accuracy remain unknown."
+    }
+  ]
+}

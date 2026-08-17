@@ -1,0 +1,10 @@
+{
+  "description": "Synthetic page-evidence cases for deterministic unit tests; not a production OCR benchmark.",
+  "cases": [
+    {"fixture_id": "synthetic-digital", "expected_page_type": "digital", "tags": ["synthetic", "native"]},
+    {"fixture_id": "synthetic-scanned-persian", "expected_page_type": "scanned", "tags": ["synthetic", "scanned", "Persian"]},
+    {"fixture_id": "synthetic-mixed-bilingual", "expected_page_type": "mixed", "tags": ["synthetic", "mixed", "Persian", "English"]},
+    {"fixture_id": "synthetic-multi-column-rtl", "expected_page_type": "scanned", "tags": ["synthetic", "multi-column", "Persian"]},
+    {"fixture_id": "synthetic-empty", "expected_page_type": "empty", "tags": ["synthetic", "empty"]}
+  ]
+}

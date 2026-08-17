@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.0",
+  "_comment": "SYNTHETIC EXAMPLE (Level 3). expected_text is the normalized reference used for CER/WER. normalization_profile names the folding applied before comparison; 'persian_v1' == eda.ocr_evaluation.normalize_persian_for_evaluation (glyph/ZWNJ/digit/whitespace folding).",
+  "pages": [
+    {
+      "filename": "invoice_fa_scanned.pdf",
+      "page_number": 1,
+      "normalization_profile": "persian_v1",
+      "expected_text": "فاکتور فروش شماره ۱۰۲۴ تاریخ ۱۴۰۳/۰۵/۲۰ نام مشتری شرکت نمونه مبلغ کل دوازده میلیون ریال"
+    },
+    {
+      "filename": "policy_en_digital.pdf",
+      "page_number": 1,
+      "normalization_profile": "none",
+      "expected_text": "Information Security Policy. This document defines the acceptable use of company systems and the handling of confidential data across all departments."
+    }
+  ]
+}

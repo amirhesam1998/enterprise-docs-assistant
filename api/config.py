@@ -53,3 +53,63 @@ REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 # Uploaded files land here. It sits under data/ on purpose: that directory is the
 # shared mount, so the API writes the file and the worker reads the same path.
 UPLOAD_DIR = os.getenv("UPLOAD_DIR", "data/uploads")
+
+
+# --- Ingestion pipeline selection ---
+# The worker can ingest through the legacy parser path or the new canonical,
+# route-based extraction pipeline. The switch is a single environment variable and
+# defaults to legacy — current behavior is preserved unless explicitly opted in.
+# Invalid values fail loudly here at import (startup), not silently at runtime.
+def _env_choice(name: str, default: str, allowed: set[str]) -> str:
+    value = os.getenv(name, default).strip().lower()
+    if value not in allowed:
+        raise ValueError(
+            f"{name} must be one of {sorted(allowed)}; got {os.getenv(name)!r}."
+        )
+    return value
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be a boolean (true/false); got {raw!r}.")
+
+
+def _env_int(name: str, default: int, minimum: int = 1) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as error:
+        raise ValueError(f"{name} must be an integer; got {raw!r}.") from error
+    if value < minimum:
+        raise ValueError(f"{name} must be >= {minimum}; got {value}.")
+    return value
+
+
+INGESTION_PIPELINES = {"legacy", "canonical", "docling_first"}
+
+# legacy        : parse_any() -> _stamp_identity() -> ingest_chunks()  (unchanged)
+# canonical     : route-based canonical extraction + quality gating (default_router)
+# docling_first : same as canonical but prefers Docling for PDF/DOCX
+INGESTION_PIPELINE = _env_choice("INGESTION_PIPELINE", "legacy", INGESTION_PIPELINES)
+
+# Canonical only: embed pages the quality gate flagged for review. Off by default —
+# needs_review is reported as a business outcome, not silently indexed.
+INGESTION_ALLOW_NEEDS_REVIEW = _env_bool("INGESTION_ALLOW_NEEDS_REVIEW", False)
+
+# Canonical only: word budget for structure-aware chunking (structure_chunker's
+# DEFAULT_MAX_WORDS). Kept here so it is tunable without touching library code.
+INGESTION_MAX_CHUNK_WORDS = _env_int("INGESTION_MAX_CHUNK_WORDS", 350)
+
+# Canonical only: when extraction yields zero embeddable chunks and there is no
+# needs_review outcome (i.e. everything failed), fail the task loudly instead of
+# reporting a silent success.
+INGESTION_FAIL_ON_ZERO_CHUNKS = _env_bool("INGESTION_FAIL_ON_ZERO_CHUNKS", True)

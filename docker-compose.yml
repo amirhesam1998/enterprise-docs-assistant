@@ -101,7 +101,20 @@ services:
       # reads that exact path.
       - ./data:/app/data
       - ${HF_CACHE_DIR:-~/.cache/huggingface}:/opt/hf
-    command: ["celery", "-A", "api.celery_app.celery_app", "worker", "--loglevel=info", "--concurrency=1"]
+    command: ["celery", "-A", "api.celery_app.celery_app", "worker", "--loglevel=info", "--concurrency=1", "--events"]
+
+  flower:
+    build: .
+    container_name: eda-flower
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    command: ["celery", "-A", "api.celery_app.celery_app", "flower", "--address=0.0.0.0", "--port=5555"]
+    ports:
+      - "127.0.0.1:5555:5555"
 
   frontend:
     build: ./frontend

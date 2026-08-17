@@ -33,6 +33,7 @@ TENANTS = [
             "path": POSTGRES_PDF,
             "tenant_id": "postgres",
             "source": "postgres.pdf",
+            "logical_document_key": "postgres-reference-manual",
             "acl_groups": ["engineering"],
             "page_start": 31,
             "page_end": 131,
@@ -45,6 +46,7 @@ TENANTS = [
             "path": POSTGRES_PDF,
             "tenant_id": "acme-internal",
             "source": "acme-handbook.pdf",
+            "logical_document_key": "acme-handbook",
             "acl_groups": ["sales"],
             "page_start": 500,
             "page_end": 600,
@@ -57,13 +59,15 @@ TENANTS = [
             "path": POSTGRES_PDF,
             "tenant_id": "postgres",
             "source": "postgres-hr.pdf",
+            "logical_document_key": "postgres-hr-handbook",
             "acl_groups": ["hr"],
             "page_start": 700,
             "page_end": 750,
         },
     },
     {
-        # ACL groups come per-row from the sheet itself, not from a fixed list.
+        # No authoritative ACL is encoded in the current parser or workbook
+        # contract. Configure acl_groups here before running this batch build.
         "name": "kb",
         "parser": parse_xlsx,
         "args": {
@@ -75,7 +79,18 @@ TENANTS = [
 ]
 
 
+def validate_tenant_specs():
+    """Fail before connecting/indexing when XLSX access scope is undefined."""
+    for tenant in TENANTS:
+        if tenant["parser"] is parse_xlsx and not tenant["args"].get("acl_groups"):
+            raise ValueError(
+                f"{tenant['name']}: configure authoritative acl_groups before "
+                "XLSX indexing; missing ACL is not public access."
+            )
+
+
 if __name__ == "__main__":
+    validate_tenant_specs()
     print(f"Qdrant: {QDRANT_URL}  collection: {COLLECTION}")
     client = QdrantClient(url=QDRANT_URL)
     try:

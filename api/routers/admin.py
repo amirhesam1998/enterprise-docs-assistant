@@ -80,13 +80,49 @@ def _ensure_level_change_allowed(actor: CurrentUser, level: Level) -> None:
         )
 
 
+def _ensure_tenant_scope(actor: CurrentUser, tenant_id: str) -> None:
+    """Non-creator admins may only create/modify users within their own tenant."""
+    if actor.is_creator:
+        return
+    if tenant_id != actor.tenant_id:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "نمی‌توانید کاربری خارج از تننت خود بسازید یا ویرایش کنید",
+        )
+
+
+def _ensure_acl_scope(actor: CurrentUser, acl_groups: list[str]) -> None:
+    """Non-creator admins cannot grant ACL groups they do not themselves hold."""
+    if actor.is_creator:
+        return
+    missing = set(acl_groups) - set(actor.acl_groups)
+    if missing:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            f"نمی‌توانید گروه‌های ACL‌ای که خودتان ندارید اعطا کنید: {', '.join(sorted(missing))}",
+        )
+
+
+def _get_user_in_scope(db: Session, user_id: int, actor: CurrentUser) -> User:
+    """Fetch a user, but hide users outside the actor's tenant behind the same
+    404 as a genuinely missing user — so an out-of-tenant admin cannot enumerate
+    or confirm the existence of other tenants' users."""
+    user = _get_user(db, user_id)
+    if not actor.is_creator and user.tenant_id != actor.tenant_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "کاربر یافت نشد")
+    return user
+
+
 # ========================= USERS =========================
 @router.get("/users", response_model=list[UserOut])
 def list_users(
     db: Session = Depends(get_db),
-    _: CurrentUser = Depends(require_permission("users.read")),
+    actor: CurrentUser = Depends(require_permission("users.read")),
 ):
-    users = db.scalars(select(User).order_by(User.id)).all()
+    stmt = select(User).order_by(User.id)
+    if not actor.is_creator:
+        stmt = stmt.where(User.tenant_id == actor.tenant_id)
+    users = db.scalars(stmt).all()
     return [serialize_user(u) for u in users]
 
 
@@ -97,6 +133,9 @@ def create_user(
     actor: CurrentUser = Depends(require_permission("users.write")),
 ):
     _ensure_level_change_allowed(actor, body.level)
+    tenant_id = body.tenant_id or DEFAULT_TENANT
+    _ensure_tenant_scope(actor, tenant_id)
+    _ensure_acl_scope(actor, body.acl_groups)
     if db.scalar(select(User).where(User.username == body.username)):
         raise HTTPException(status.HTTP_409_CONFLICT, "این نام کاربری قبلاً وجود دارد")
     user = User(
@@ -104,7 +143,7 @@ def create_user(
         email=body.email,
         password_hash=hash_password(body.password),
         level=body.level,
-        tenant_id=body.tenant_id or DEFAULT_TENANT,
+        tenant_id=tenant_id,
         acl_groups=body.acl_groups,
     )
     db.add(user)
@@ -120,7 +159,7 @@ def update_user(
     db: Session = Depends(get_db),
     actor: CurrentUser = Depends(require_permission("users.write")),
 ):
-    user = _get_user(db, user_id)
+    user = _get_user_in_scope(db, user_id, actor)
 
     if body.level is not None and body.level != user.level:
         _ensure_level_change_allowed(actor, body.level)
@@ -136,9 +175,13 @@ def update_user(
         user.password_hash = hash_password(body.password)
     if body.email is not None:
         user.email = body.email
-    if body.tenant_id is not None:
+    if body.tenant_id is not None and body.tenant_id != user.tenant_id:
+        # moving a user across tenants is a structural change — creators only
+        if not actor.is_creator:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "فقط سازنده می‌تواند تننت کاربر را تغییر دهد")
         user.tenant_id = body.tenant_id
     if body.acl_groups is not None:
+        _ensure_acl_scope(actor, body.acl_groups)
         user.acl_groups = body.acl_groups
 
     db.commit()
@@ -152,7 +195,7 @@ def delete_user(
     db: Session = Depends(get_db),
     actor: CurrentUser = Depends(require_permission("users.delete")),
 ):
-    user = _get_user(db, user_id)
+    user = _get_user_in_scope(db, user_id, actor)
     if user.username == actor.username:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "نمی‌توانید خودتان را حذف کنید")
     if user.level == Level.creator and _creator_count(db) <= 1:
@@ -168,7 +211,7 @@ def assign_role(
     db: Session = Depends(get_db),
     actor: CurrentUser = Depends(require_permission("users.write")),
 ):
-    user = _get_user(db, user_id)
+    user = _get_user_in_scope(db, user_id, actor)
     role = _get_role(db, body.role_id)
     _ensure_can_grant(actor, {p.name for p in role.permissions})
     if role not in user.roles:
@@ -183,9 +226,9 @@ def unassign_role(
     user_id: int,
     role_id: int,
     db: Session = Depends(get_db),
-    _: CurrentUser = Depends(require_permission("users.write")),
+    actor: CurrentUser = Depends(require_permission("users.write")),
 ):
-    user = _get_user(db, user_id)
+    user = _get_user_in_scope(db, user_id, actor)
     role = _get_role(db, role_id)
     if role in user.roles:
         user.roles.remove(role)

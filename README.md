@@ -33,8 +33,10 @@ problem — validated by test, not asserted:
 - **Multi-format ingestion** through a parser registry — PDF, XLSX, DOCX, and images (OCR) — where
   adding a format is one parser plus one line.
 - **Async document upload** via Celery, with identity stamped from the uploader's token.
-- **Hybrid retrieval** (dense + BM25) with cross-encoder reranking.
-- **Evaluation harness** with stable, chunk-id-based ground truth.
+- **Dense retrieval** in the production API. Hybrid BM25 and cross-encoder
+  reranking currently exist only in experimental scripts.
+- **Experimental retrieval evaluation** with chunk-id-based ground truth; it is
+  not yet part of the automated unit-test suite.
 - **JWT auth** with a React frontend and one-command Docker startup.
 
 ---
@@ -54,7 +56,7 @@ Query:      question + identity (from JWT)
                     |  vector search with MANDATORY pre-filter:
                     |  tenant_id == X  AND  acl_groups intersect user_groups
                     v
-              cross-encoder rerank -> LLM generation -> answer + citations
+              top-k context -> LLM generation -> answer + source metadata
 
 Upload:     file -> /documents/upload -> Celery task (worker) -> parse -> embed -> index
 ```
@@ -64,6 +66,21 @@ nothing downstream knows or cares whether the source was a PDF, a spreadsheet, a
 scanned image. `location` is polymorphic — `{type: page, num}` for PDF, `{type: cell, sheet, row}`
 for spreadsheets, `{type: paragraph, index}` for Word, `{type: image, num}` for images — so each
 format cites itself in its own terms without null columns.
+
+### Versioned ingestion foundations
+
+`eda.ingestion_schema` defines the versioned document, page, region, OCR-decision,
+and provenance contracts used by adaptive PDF extraction. Internal `page_index` is
+zero-based; user-facing `page_number` is one-based and must equal
+`page_index + 1`. Mixed pages retain native and OCR text separately, with a
+deterministic `index_text` that removes only an effectively identical duplicate.
+
+`eda.identifiers` provides tenant-scoped logical document IDs and content-scoped
+revision, page, region, and future chunk IDs. IDs are deterministic UUID5 values;
+the logical document key must be an authoritative ID rather than only a filename.
+Adaptive pages convert through a conservative page-sized compatibility adapter;
+the legacy `Chunk` constructor remains unchanged. XLSX and adaptive PDF ingestion
+require an explicit non-empty ACL scope.
 
 ---
 
@@ -149,7 +166,11 @@ control also exposed a bug in the test itself — a tenant was named `acme` whil
 
 ---
 
-## Retrieval quality
+## Experimental retrieval quality
+
+The figures below came from the standalone `scripts/eval.py` experiment. The
+production `/ask` endpoint remains dense-only, and these figures are not a current
+CI-backed baseline.
 
 Evaluated with chunk-id-based ground truth (stable across re-indexing, unlike integer point IDs):
 
@@ -195,9 +216,43 @@ without touching the queue, endpoint, or frontend. Uploaded documents are stampe
 uploader's tenant and groups, and their chunk IDs are namespaced by tenant so two tenants
 uploading a same-named file never collide.
 
-**OCR note:** English extraction is strong; Persian OCR is a basic baseline. Rather than sink time
-into Persian OCR tuning for a low-frequency format, a working baseline ships and quality
-improvement is left as future work.
+### Adaptive PDF extraction
+
+PDF ingestion defaults to the existing native-text parser. Adaptive extraction
+must be enabled explicitly with `EDA_PDF_EXTRACTION_MODE=adaptive` or the
+`parse_pdf(..., extraction_mode="adaptive")` argument. Invalid values fail.
+Adaptive callers must also provide an authoritative `logical_document_key` and
+ACL groups; uploaded PDFs use their generated storage-object name as that key.
+
+Adaptive mode requires Tesseract 5 with `fas` and `eng` language packs. Set
+`TESSERACT_CMD` only when Tesseract is not on `PATH`. Initial supported profiles
+are `fas+eng`, `fas`, and `eng`. `AdaptiveOCRConfig` centralizes render DPI,
+bounded PSM/preprocessing candidates, timeouts, region advantage, and provisional
+quality thresholds. These defaults are operational starting points, not a
+scientifically validated accuracy baseline.
+
+The adaptive pipeline emits typed `DocumentManifest` and `PageResult` objects.
+Mixed pages keep native and OCR layers separately and are marked `needs_review`
+because coordinate-level merging is not implemented. Table-like content remains
+text regions; structured table extraction and section-aware structural chunking
+remain later work.
+
+### Canonical route-based ingestion (opt-in)
+
+The Celery worker can ingest through the new canonical, route-based extraction
+pipeline instead of the legacy parser, selected by environment variable:
+
+- `INGESTION_PIPELINE=legacy` (default) — `parse_any` → `ingest_chunks`, unchanged.
+- `INGESTION_PIPELINE=canonical` — route → canonical extraction → quality gate →
+  structure-aware chunking; only accepted content is embedded, and the job result
+  carries route/quality/page-verdict details.
+- `INGESTION_PIPELINE=docling_first` — canonical, preferring Docling for PDF/DOCX.
+
+Related knobs: `INGESTION_ALLOW_NEEDS_REVIEW` (default `false`),
+`INGESTION_MAX_CHUNK_WORDS` (default `350`), `INGESTION_FAIL_ON_ZERO_CHUNKS`
+(default `true`). `needs_review` documents are parsed but **not** indexed by
+default (returned as a business outcome, not a crash). Rollback is instant:
+`INGESTION_PIPELINE=legacy`. See `docs/document-ingestion-architecture.md`.
 
 ---
 
@@ -206,6 +261,15 @@ improvement is left as future work.
 ```
 src/eda/        pipeline library (framework-agnostic - no FastAPI imports)
   schema.py     Chunk - the intermediate representation
+  ingestion_schema.py  versioned document/page/OCR/provenance contracts
+  identifiers.py       deterministic ingestion identifiers and file hashing
+  evaluation_schema.py committed-sanitized/local-private fixture manifests
+  ocr_routing.py       pure routing policy used by contract tests
+  pdf_analysis.py      page evidence collection and classification
+  ocr_quality.py       candidate metrics, quality gate and deterministic selection
+  adaptive_ocr.py      typed page-level adaptive PDF extraction
+  ingestion_adapter.py typed PageResult to legacy page-sized Chunk adapter
+  ocr_evaluation.py    CER/WER and routing/extraction metrics
   parse.py      parsers + parse_any registry
   normalize.py  Unicode normalization + persian_ratio
   chunk.py      chunking strategies
@@ -215,6 +279,35 @@ scripts/        build_index.py, search.py, eval.py, leak_test.py
 frontend/       React app
 data/           (gitignored) Qdrant storage, SQLite DB, uploads, source files
 ```
+
+OCR evaluation has two tiers under `evaluation/ocr/`: small approved
+`committed_sanitized` fixtures for CI, and ignored `local_private` fixtures for
+real documents. No real OCR accuracy baseline is claimed until labeled fixtures
+are approved.
+
+Run isolated tests without external services or OCR binaries:
+
+```bash
+uv run --group dev pytest
+```
+
+Run the explicitly opted-in local OCR diagnostic tests only when Tesseract and
+an approved private fixture are configured:
+
+```bash
+EDA_RUN_OCR_INTEGRATION=1 EDA_PRIVATE_OCR_PDF=/local/private.pdf \
+  uv run --group dev pytest -m ocr_integration
+```
+
+The typed diagnostic CLI accepts one-based pages and prints only compact metrics:
+
+```bash
+uv run python scripts/adaptive_pdf_extract.py document.pdf --pages 4,12 \
+  --tenant-id local-diagnostic --logical-document-key approved-local-document
+```
+
+`eda.ocr_evaluation.normalized_cer()` and `normalized_wer()` return unavailable
+when approved ground truth is absent; OCR output is never treated as truth.
 
 ---
 
@@ -240,6 +333,7 @@ The corpus surfaced findings that would have silently corrupted retrieval:
 - Persian OCR quality is basic.
 - Word chunking is fixed-size; structural (heading-based) chunking would keep language and section
   boundaries clean.
+- Hybrid retrieval and reranking are still experimental and are outside the adaptive OCR milestone.
 
 ---
 

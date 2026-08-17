@@ -34,6 +34,7 @@ def upload(
     file: UploadFile,
     actor: CurrentUser = Depends(require_permission("documents.upload")),
 ):
+
     if not file.filename:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "نام فایل الزامی است")
 
@@ -53,10 +54,10 @@ def upload(
     # Queued, not awaited — the model load and the embedding pass belong to the
     # worker. tenant/ACL come from the token (see module docstring).
     task = ingest_document.delay(
-        saved,              # parse_any reads the format off this path's extension
-        actor.tenant_id,    # ← from token (ACL), not from the request
-        file.filename,
-        actor.acl_groups,   # ← from token (ACL), not from the request
+        path = saved,              # parse_any reads the format off this path's extension
+        tenant_id = actor.tenant_id,    # ← from token (ACL), not from the request
+        source = file.filename,
+        acl_groups = actor.acl_groups,   # ← from token (ACL), not from the request
     )
 
     return UploadAccepted(job_id=task.id, source=file.filename)
